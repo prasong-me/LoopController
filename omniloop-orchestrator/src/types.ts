@@ -1,0 +1,1 @@
+export type ProxyType="http"|"https"|"socks5"; export interface OmniConfig{proxyType:ProxyType;proxyServer:string;proxyPort:number;enableAdblock:boolean;enableSideStoreCompatibility:boolean;} export interface Rule{value:string;action:string;}
