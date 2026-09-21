@@ -1,0 +1,31 @@
+{
+  "id": "00000000-0000-0000-0000-000000000001",
+  "name": "SideStore",
+  "kind": "sideStore",
+  "loopback": {
+    "enabled": true,
+    "address": "10.7.0.1",
+    "prefixLength": 32
+  },
+  "dns": {
+    "enabled": false,
+    "servers": [],
+    "searchDomains": []
+  },
+  "blocking": {
+    "enabled": false,
+    "malware": false,
+    "phishing": false,
+    "tracker": false,
+    "adult": false,
+    "gambling": false
+  },
+  "fullTunnel": false,
+  "routes": [
+    {
+      "destination": "10.7.0.1",
+      "prefixLength": 32
+    }
+  ],
+  "mtu": 1500
+}
