@@ -1,43 +1,118 @@
-# External Runtime Exports
+# Configuration Compiler and External Targets
 
-LoopController keeps its networking model independent from third-party apps.
+LoopController is being redesigned from a small set of exporters into a **configuration compiler**.
 
-## Export targets
+## Core idea
 
-- Surge: generates an INI-like .conf profile.
-- Rocket Proxy: generates a Clash/Stash-compatible YAML profile.
-- LoopController: generates native JSON for backup and future import/export.
+The app owns one neutral configuration model. Target applications receive generated configurations through adapters.
 
-The generated files are configuration adapters, not copied third-party application code.
+```text
+Profile
+  ↓
+Canonical Policy
+  ↓
+Capability Check
+  ↓
+Target Compiler
+  ↓
+Target Serializer
+  ↓
+.conf / .yaml / .json / .toml / other text config
+```
 
-## Runtime model
+The target file is therefore an output artifact, not the source of truth.
 
-Only use one VPN/tunnel runtime for system traffic at a time. During development, an external app can be used as a test runtime while LoopController's native Packet Tunnel is still incomplete.
+## Supported target families
 
-Suggested validation roles:
+### Surge
 
-1. Surge — routing and rule behavior reference.
-2. Rocket Proxy — Clash/Stash YAML compatibility.
-3. ProxyPin — HTTP(S) traffic inspection during debugging.
-4. Control D — DNS behavior testing.
-5. WireGuard — L3 tunnel/routing testing.
+Surge uses an INI-like profile format with sections including `[General]`, `[Proxy]`, `[Proxy Group]`, and `[Rule]`. Surge also has dedicated VIF route controls such as `tun-included-routes` and `tun-excluded-routes`. The adapter must therefore distinguish network-route semantics from traffic-rule semantics. citeturn823730search0turn823730search1
 
-LoopController should not attempt to start or control these applications as part of its core VPN manager.
+### Mihomo / Clash family
 
-## Limitations
+The Mihomo configuration model is YAML-based and includes routing, proxies, proxy groups, DNS, and rule providers. Rocket Proxy is handled as a target runtime for the supported Clash/Stash/Mihomo-style configuration rather than as a separate canonical model. citeturn823730search3turn823730search4
 
-Category flags such as malware, phishing, tracker, adult and gambling do not contain domain lists by themselves. Exporters therefore preserve those flags as comments until LoopController has a defined, licensed blocklist provider/rule-set model.
+## Semantic mapping
 
-This avoids silently inventing or embedding third-party lists.
+The compiler must keep these concepts separate:
 
-## Surge format
+| Canonical concept | Example target representation |
+|---|---|
+| Route | Surge VIF route / target route mechanism |
+| Traffic Rule | Surge `[Rule]` / Mihomo `rules` |
+| Proxy | Surge `[Proxy]` / Mihomo `proxies` |
+| Proxy Group | Surge `[Proxy Group]` / Mihomo `proxy-groups` |
+| DNS | Surge `[General]` / Mihomo `dns` |
+| Rule Provider | Surge ruleset mechanisms / Mihomo `rule-providers` |
+| Loopback | Target-specific takeover/interception mechanism or native engine |
+| Blocking | Provider-backed rulesets or native blocking engine |
 
-Surge profiles are INI-like and use sections such as [General] and [Rule]. Rules are evaluated in order, so the exporter always places FINAL,DIRECT last.
+A canonical feature must not be mapped merely because two target files happen to accept similar text.
 
-Source: Surge Profile Format and Rule System documentation:
-https://manual.nssurge.com/profile/format.html
-https://manual.nssurge.com/rules/overview.html
+## Lossy conversion policy
 
-## Credits
+Each export produces:
 
-These exporters are original LoopController adapter code. They emit configuration syntax based on the documented configuration formats of the target applications. No proprietary application source code is included.
+- generated configuration
+- target name/version
+- supported feature set
+- warnings
+- errors
+- omitted/approximated features
+- validation status
+
+Example:
+
+```text
+Requested:
+  loopback = true
+
+Target:
+  Surge
+
+Result:
+  status = warning
+  reason = target configuration does not equal LoopController's native
+           packet-forwarding/NAT implementation
+```
+
+The compiler must never mark such an export as equivalent when it is only syntactically valid.
+
+## Serialization
+
+Serialization is a reusable layer, independent of network features.
+
+Initial format families:
+
+- JSON
+- YAML
+- INI/CONF
+- TOML
+- XML/plist when a target needs them
+- line-oriented and template-defined configuration
+
+“รองรับหลายภาษา” in this project means that new configuration syntaxes can be added through serializers/adapters without changing the canonical network model. It does not mean every arbitrary file format is automatically semantically compatible.
+
+## Import
+
+Where a target format is sufficiently documented and reversible, LoopController should support:
+
+```text
+Target Config → Parser → Canonical Policy → Compiler → Target Config
+```
+
+Target-specific extensions that cannot be represented neutrally should be preserved as extensions or surfaced as non-portable data.
+
+## External app policy
+
+LoopController does not start, stop, or silently control third-party VPN runtimes. During development they are validation targets.
+
+Current reference roles:
+
+- Surge — profile/routing behavior reference
+- Rocket Proxy — Clash-family YAML import reference
+- ProxyPin — HTTP(S) traffic inspection
+- Control D — DNS testing
+- WireGuard — L3 tunnel testing
+
+Only one VPN/tunnel runtime should be used for system traffic at a time during testing.
