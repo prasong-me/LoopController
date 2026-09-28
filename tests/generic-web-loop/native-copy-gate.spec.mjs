@@ -2,12 +2,18 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 
 test('TC-RUNTIME-NATIVE-COPY-001 — native Copy + OS clipboard readback', async ({ page, context }, testInfo) => {
+  test.skip(
+    process.env.AICC_NATIVE_COPY_RUNTIME !== '1',
+    'Native Copy Gate requires an explicitly enabled real-browser runtime run; ordinary CI/headless runs are not gate evidence.'
+  );
+
   const origin = 'http://127.0.0.1:4173';
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
 
   await page.goto(origin + '/tests/generic-web-loop/index.html?name=A', { waitUntil: 'domcontentloaded' });
 
   const runtime = await page.evaluate(() => ({
+    browser: navigator.userAgent,
     secureContext: window.isSecureContext,
     clipboardAvailable: !!navigator.clipboard,
     userActivationApi: !!navigator.userActivation
@@ -16,8 +22,6 @@ test('TC-RUNTIME-NATIVE-COPY-001 — native Copy + OS clipboard readback', async
   expect(runtime.secureContext).toBe(true);
   expect(runtime.clipboardAvailable).toBe(true);
   expect(runtime.userActivationApi).toBe(true);
-
-  await page.evaluate(() => navigator.clipboard.writeText('AICC-NATIVE-COPY-SENTINEL'));
 
   const message = 'native-copy-gate-' + Date.now();
   await page.locator('#message').fill(message);
@@ -30,8 +34,9 @@ test('TC-RUNTIME-NATIVE-COPY-001 — native Copy + OS clipboard readback', async
   const copyButton = page.getByRole('button', { name: 'Copy' });
   await expect(copyButton).toBeEnabled();
 
-  // The gate deliberately clicks the real fixture Copy button.
-  // It does not call HTMLElement.click(), dispatchEvent(), or a test API shortcut.
+  // Browser automation input is evidence of the browser path, not a human-interaction claim.
+  // The test uses the real fixture Copy control and never uses HTMLElement.click(),
+  // dispatchEvent(), or a clipboard shortcut.
   await copyButton.click();
 
   await expect(page.locator('#status')).toHaveText('COPIED', { timeout: 5000 });
@@ -50,8 +55,11 @@ test('TC-RUNTIME-NATIVE-COPY-001 — native Copy + OS clipboard readback', async
   const evidence = {
     testCase: 'TC-RUNTIME-NATIVE-COPY-001',
     timestamp: new Date().toISOString(),
+    inputSource: 'playwright-browser-automation',
+    humanInteractionClaim: false,
     url: page.url(),
     runtime,
+    permissionPreparation: ['clipboard-read', 'clipboard-write'],
     expectedPayload,
     clipboardText,
     exactMatch: clipboardText === expectedPayload,
