@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
+const headed = process.env.AICC_HEADLESS !== '1';
+
 export default defineConfig({
   testDir: '.',
   testMatch: ['tests/generic-web-loop/*.spec.mjs'],
@@ -8,7 +10,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
   use: {
     browserName: 'chromium',
-    headless: true,
+    headless: !headed,
     trace: 'retain-on-failure'
   },
   webServer: {
