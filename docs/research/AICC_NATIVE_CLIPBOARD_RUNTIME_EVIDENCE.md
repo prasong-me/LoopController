@@ -97,13 +97,21 @@ Therefore:
 
 Native Copy Gate = RUNTIME VERIFICATION PENDING
 
+The repository now separates runtime-gate execution from hosted CI preflight. The gate test requires explicit runtime enablement and headed Chromium; the normal CI workflow is preflight-only and cannot close the gate.
+
 A server-side Node.js/headless test that cannot access the real OS clipboard must remain BLOCKED for this gate; it must not be upgraded to PASS.
 
 ## Next Engineering Action
 
 Do not create another mock clipboard harness.
 
-Use the existing repository Browser Test Harness and execute it in a real browser runtime with actual clipboard access. Add or adapt only the minimum test/evidence code needed for the Native Copy Gate.
+Use the existing repository Browser Test Harness and execute it in a real browser runtime with actual clipboard access. The prepared local gate path is:
+
+`AICC_NATIVE_COPY_RUNTIME=1 npx playwright test tests/generic-web-loop/native-copy-gate.spec.mjs --headed`
+
+The test uses the real fixture Copy control, browser automation input, browser Clipboard API readback, and an attached JSON evidence record. It explicitly does not claim human interaction. Hosted CI remains preflight-only until a runtime capable of providing the required OS/browser clipboard evidence is available.
+
+No new mock clipboard harness is to be created.
 
 After runtime evidence exists, Gemini is used as Independent Reviewer / Engineering Historian to critique the evidence and identify gaps. Iris remains responsible for implementation, execution, defect fixing, and moving the project through the gate.
 
