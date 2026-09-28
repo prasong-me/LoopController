@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AICC Two-Page Loop Fixture</title>
+<style>
+body{font:16px system-ui;margin:30px;background:#f4f5f7}
+main{max-width:700px;background:#fff;padding:24px;border-radius:16px}
+textarea{width:100%;height:90px;box-sizing:border-box}
+button{padding:9px 14px;margin:8px 4px 0 0}
+#response{white-space:pre-wrap;margin-top:18px;padding:14px;background:#f2f3f5;min-height:80px}
+#copy:disabled{opacity:.5}
+</style>
+</head>
+<body>
+<main>
+<h1 id="title">Generic Web</h1>
+<textarea id="message"></textarea>
+<button id="send">Send</button>
+<section id="response"></section>
+<button id="copy" disabled>Copy</button>
+<p id="status">READY</p>
+<p id="round"></p>
+</main>
+<script>
+(() => {
+  const params=new URLSearchParams(location.search);
+  const name=params.get('name')||'A';
+  title.textContent='Generic Web '+name;
+  let timer=null,seq=0;
+
+  function renderResponse(text){
+    clearInterval(timer);
+    response.textContent='';
+    copy.disabled=true;
+    status.textContent='PROCESSING';
+    let i=0;
+    const chunks=[text+' | chunk 1',text+' | chunk 2',text+' | chunk 3'];
+    timer=setInterval(()=>{
+      response.textContent=chunks[i++];
+      if(i===chunks.length){
+        clearInterval(timer);
+        copy.disabled=false;
+        status.textContent='READY_TO_COPY';
+      }
+    },25);
+  }
+
+  send.onclick=()=>{
+    const v=message.value.trim();
+    if(!v) throw new Error('empty message');
+    seq++;
+    round.textContent='operation '+seq;
+    renderResponse(name+' processed: '+v);
+  };
+
+  copy.onclick=()=>{
+    if(copy.disabled) throw new Error('copy clicked before ready');
+    copy.dataset.copied='true';
+    copy.dataset.payload=response.textContent;
+    status.textContent='COPIED';
+  };
+
+  window.testApi={
+    name,
+    paste(v){message.value=v;message.dispatchEvent(new Event('input',{bubbles:true}));status.textContent='PASTED'},
+    submit(){send.click()},
+    isReadyToCopy(){return !copy.disabled&&response.textContent.trim().length>0},
+    nativeCopy(){
+      if(!this.isReadyToCopy()) throw new Error('Copy not ready');
+      copy.click();
+      const p=copy.dataset.payload;
+      if(!p) throw new Error('Copy produced no payload');
+      return p;
+    },
+    snapshot(){return {name,response:response.textContent,status:status.textContent,copied:copy.dataset.copied||'false',seq}}
+  };
+})();
+</script>
+</body>
+</html>
