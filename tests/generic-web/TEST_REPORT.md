@@ -96,3 +96,18 @@ Implemented as a separate pattern family from the DOM/semantic click pattern.
 
 ### Test status
 **IMPLEMENTED / browser execution pending** for the new screen-position pattern family. It must not be reported as fully PASS until recording, marker ordering, 10-position limit, single/paired page routing, interval/count execution, and native pointer-click integration are exercised.
+
+
+## Runtime Verification — Native Copy Gate
+
+The existing generic-web-loop fixture is now extended for real browser clipboard verification.
+
+- The fixture Copy button uses the browser Clipboard API.
+- The gate records Copy-click evidence, trusted-event state, transient user activation, and clipboard-write completion.
+- The gate reads the system clipboard and requires an exact response match.
+- The test runner uses Chromium through Playwright on the existing fixture.
+- CI workflow: .github/workflows/aicc-native-copy.yml
+
+**Current evidence status: IMPLEMENTED / EXECUTION PENDING.**
+
+The earlier server-side Node result remains BLOCKED because that environment had no browser/OS clipboard. The new browser gate is the path for runtime evidence and must not be called PASS until its browser run produces the evidence artifact.
