@@ -43,8 +43,7 @@
         color:'#fff',background:'rgba(0,0,0,.86)',border:'2px solid #fff',
         boxShadow:'0 2px 10px rgba(0,0,0,.45)'
       });
-      el.textContent=point.order===this.currentPoints.length?'END':String(point.order);
-      if(point.order!==this.currentPoints.length) el.textContent=String(point.order);
+      el.textContent=point.end ? 'END' : String(point.order);
       layer.appendChild(el);
     }
 
@@ -126,14 +125,15 @@
       return {x,y,element:hit||null};
     }
 
-    async run(pattern,{activatePage=this.activatePage}={}){
+    async run(pattern,{activatePage=this.activatePage,pointerClick=null}={}){
       for(let cycle=0;cycle<pattern.count;cycle++){
         for(let i=0;i<pattern.points.length;i++){
           const point=pattern.points[i];
           if(pattern.pageMode==='paired' && activatePage) await activatePage(point.page,pattern);
           const target=this.resolvePoint(point);
           if(!target.element)throw new Error('Screen position '+(i+1)+' has no target');
-          target.element.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,clientX:target.x,clientY:target.y,view:window}));
+          if(pointerClick) await pointerClick(target.x,target.y);
+          else target.element.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,clientX:target.x,clientY:target.y,view:window}));
           if(i<pattern.points.length-1 || cycle<pattern.count-1)await sleep(pattern.intervalMs);
         }
       }
