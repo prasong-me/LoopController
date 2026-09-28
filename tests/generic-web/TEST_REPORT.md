@@ -73,3 +73,26 @@ Implemented in commit sequence on branch `test/generic-controller-ui`.
 - Generic test page now contains a dedicated target button and click counter.
 
 **Test status for this new layer: IMPLEMENTED / browser execution pending.**
+
+
+## Separate Screen-Position Pattern
+
+Implemented as a separate pattern family from the DOM/semantic click pattern.
+
+### Configuration
+- Page mode: **single page** or **paired pages**.
+- User supplies Page A URL and, when paired, Page B URL.
+- Each recorded position belongs to Page A or Page B.
+- Maximum: **10 screen positions per pattern**.
+- Each position stores viewport coordinates plus normalized viewport ratios.
+- Each position is displayed with a numbered marker; the final saved position is marked **END**.
+- The pattern has the same configurable interval and repeat-count controls as the first pattern family.
+
+### Runtime model
+- Screen coordinates are intentionally separate from DOM/semantic target matching.
+- `elementFromPoint()` is used to inspect the element currently underneath a saved viewport coordinate; this is appropriate for coordinate-based hit testing. citeturn0search0
+- A production browser runtime can supply a native pointer-click adapter for the stored coordinates. The generic test fallback dispatches a click on the resolved element; this is not yet evidence of OS-level native pointer injection.
+- Page activation for paired mode is exposed as an adapter callback rather than hard-coded to a browser/tab implementation.
+
+### Test status
+**IMPLEMENTED / browser execution pending** for the new screen-position pattern family. It must not be reported as fully PASS until recording, marker ordering, 10-position limit, single/paired page routing, interval/count execution, and native pointer-click integration are exercised.
