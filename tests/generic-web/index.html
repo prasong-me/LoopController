@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AICC Generic Web Test</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f4f5f7;color:#202124}
+main{max-width:760px;margin:40px auto;padding:24px;background:white;border-radius:16px;box-shadow:0 8px 30px #0001}
+textarea{width:100%;min-height:90px;box-sizing:border-box;padding:12px}
+button{padding:9px 14px;margin:6px 4px 0 0}
+#response{margin-top:20px;min-height:100px;padding:16px;background:#f7f7f8;border-radius:12px}
+#response-tools{margin-top:8px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Generic Web Message Test</h1>
+<p>This page intentionally simulates a normal text web app.</p>
+<textarea id="message" placeholder="พิมพ์ข้อความ"></textarea>
+<button id="send">Send</button>
+<section id="response" aria-live="polite"></section>
+<div id="response-tools">
+<button id="copy" disabled>Copy</button>
+</div>
+<p id="activity">Ready</p>
+</main>
+<script>
+const send=document.querySelector('#send'), input=document.querySelector('#message');
+const response=document.querySelector('#response'), copy=document.querySelector('#copy'), activity=document.querySelector('#activity');
+let timer;
+send.onclick=()=>{
+  clearInterval(timer); copy.disabled=true; response.textContent=''; activity.textContent='Processing';
+  const source=input.value.trim()||'test message';
+  let i=0;
+  const parts=['กำลัง','ประมวลผล','ข้อความ','ตัวอย่าง','เรียบร้อย'];
+  timer=setInterval(()=>{
+    response.textContent=parts.slice(0,++i).join(' ')+' — '+source;
+    if(i===parts.length){clearInterval(timer);copy.disabled=false;activity.textContent='Ready';}
+  },700);
+};
+copy.onclick=()=>{activity.textContent='Copied'; copy.dataset.copied='true';};
+</script>
+</body>
+</html>
