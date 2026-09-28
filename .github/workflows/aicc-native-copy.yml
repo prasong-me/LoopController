@@ -1,0 +1,38 @@
+name: AICC Native Copy Gate
+
+on:
+  push:
+    branches:
+      - test/generic-controller-ui
+  workflow_dispatch:
+
+jobs:
+  native-copy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Install test dependencies
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Native Copy Gate
+        run: npm run test:native-copy
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: aicc-native-copy-evidence
+          path: |
+            test-results/
+            playwright-report/
