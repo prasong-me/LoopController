@@ -11,6 +11,7 @@ textarea{width:100%;height:90px;box-sizing:border-box}
 button{padding:9px 14px;margin:8px 4px 0 0}
 #response{white-space:pre-wrap;margin-top:18px;padding:14px;background:#f2f3f5;min-height:80px}
 #copy:disabled{opacity:.5}
+#trace{white-space:pre-wrap;font:12px ui-monospace,monospace;background:#111;color:#eee;padding:12px;border-radius:8px;margin-top:16px}
 </style>
 </head>
 <body>
@@ -22,6 +23,7 @@ button{padding:9px 14px;margin:8px 4px 0 0}
 <button id="copy" disabled>Copy</button>
 <p id="status">READY</p>
 <p id="round"></p>
+<pre id="trace" aria-label="copy trace"></pre>
 </main>
 <script>
 (() => {
@@ -29,11 +31,26 @@ button{padding:9px 14px;margin:8px 4px 0 0}
   const name=params.get('name')||'A';
   title.textContent='Generic Web '+name;
   let timer=null,seq=0;
+  const copyTrace=[];
+
+  function recordCopyTrace(event,extra={}){
+    copyTrace.push({
+      at:new Date().toISOString(),
+      type:event?.type||null,
+      isTrusted:event?.isTrusted===true,
+      userActivation:!!navigator.userActivation?.isActive,
+      hasBeenActive:!!navigator.userActivation?.hasBeenActive,
+      ...extra
+    });
+    trace.textContent=JSON.stringify(copyTrace,null,2);
+  }
 
   function renderResponse(text){
     clearInterval(timer);
     response.textContent='';
     copy.disabled=true;
+    copy.dataset.copied='false';
+    copy.dataset.payload='';
     status.textContent='PROCESSING';
     let i=0;
     const chunks=[text+' | chunk 1',text+' | chunk 2',text+' | chunk 3'];
@@ -55,26 +72,31 @@ button{padding:9px 14px;margin:8px 4px 0 0}
     renderResponse(name+' processed: '+v);
   };
 
-  copy.onclick=()=>{
+  copy.addEventListener('click',async event=>{
+    recordCopyTrace(event,{phase:'COPY_CLICK'});
     if(copy.disabled) throw new Error('copy clicked before ready');
-    copy.dataset.copied='true';
-    copy.dataset.payload=response.textContent;
-    status.textContent='COPIED';
-  };
+    const payload=response.textContent;
+    try{
+      await navigator.clipboard.writeText(payload);
+      copy.dataset.copied='true';
+      copy.dataset.payload=payload;
+      status.textContent='COPIED';
+      recordCopyTrace(event,{phase:'CLIPBOARD_WRITE_RESOLVED',payloadLength:payload.length});
+    }catch(error){
+      copy.dataset.copied='false';
+      status.textContent='COPY_FAILED';
+      recordCopyTrace(event,{phase:'CLIPBOARD_WRITE_REJECTED',error:String(error?.name||error)});
+      throw error;
+    }
+  });
 
   window.testApi={
     name,
     paste(v){message.value=v;message.dispatchEvent(new Event('input',{bubbles:true}));status.textContent='PASTED'},
     submit(){send.click()},
     isReadyToCopy(){return !copy.disabled&&response.textContent.trim().length>0},
-    nativeCopy(){
-      if(!this.isReadyToCopy()) throw new Error('Copy not ready');
-      copy.click();
-      const p=copy.dataset.payload;
-      if(!p) throw new Error('Copy produced no payload');
-      return p;
-    },
-    snapshot(){return {name,response:response.textContent,status:status.textContent,copied:copy.dataset.copied||'false',seq}}
+    snapshot(){return {name,response:response.textContent,status:status.textContent,copied:copy.dataset.copied||'false',seq}},
+    getCopyTrace(){return copyTrace.map(x=>({...x}))}
   };
 })();
 </script>
