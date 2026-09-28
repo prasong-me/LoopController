@@ -30,16 +30,54 @@
           <div class="row"><span>ตัวอักษร</span><input class="font" type="range" min="8" max="50" value="14"><output class="fontOut">14px</output></div>
           <div class="row"><span>ไอคอน</span><input class="size" type="range" min="40" max="88" value="56"><output class="sizeOut">56px</output></div>
           <div class="row"><button class="run">Run</button><button class="stop">Stop</button></div>
+          <details class="patterns"><summary>รูปแบบการกดอัตโนมัติ</summary>
+            <div class="patternBox">
+              <input class="patternName" placeholder="ชื่อแพตเทิร์น" style="width:100%;box-sizing:border-box;margin:6px 0">
+              <div class="row"><span>ความเร็ว</span><input class="interval" type="number" min="0" step="50" value="500"><span>ms</span></div>
+              <div class="row"><span>จำนวนครั้ง</span><input class="count" type="number" min="1" step="1" value="1"></div>
+              <button class="recordPattern">จำปุ่มบนหน้าเว็บ</button>
+              <button class="savePattern" disabled>บันทึกแพตเทิร์น</button>
+              <select class="patternList" style="width:100%;margin-top:6px"></select>
+              <button class="runPattern">รันแพตเทิร์น</button>
+              <small class="patternInfo">กด “จำปุ่ม” แล้วคลิกปุ่มเป้าหมายบนหน้าเว็บหนึ่งครั้ง</small>
+            </div>
+          </details>
           <small>เมนูลากได้ทั่วหน้าจอ</small>
         </div>`;
       this.root.append(this.host);
       this.shield=this.shadow.querySelector('.shield'); this.status=this.shadow.querySelector('.status'); this.menu=this.shadow.querySelector('.menu'); this.console=this.shadow.querySelector('.console');
       this.font=this.shadow.querySelector('.font'); this.size=this.shadow.querySelector('.size');
+      this.patternName=this.shadow.querySelector('.patternName'); this.interval=this.shadow.querySelector('.interval'); this.count=this.shadow.querySelector('.count');
+      this.recordPattern=this.shadow.querySelector('.recordPattern'); this.savePattern=this.shadow.querySelector('.savePattern'); this.runPattern=this.shadow.querySelector('.runPattern');
+      this.patternList=this.shadow.querySelector('.patternList'); this.patternInfo=this.shadow.querySelector('.patternInfo');
       this.menu.onclick=()=>this.console.classList.toggle('open');
       this.shadow.querySelector('.run').onclick=()=>this.start('WAIT_TARGET');
       this.shadow.querySelector('.stop').onclick=()=>this.stop();
       this.font.oninput=()=>this.setFont(Number(this.font.value)); this.size.oninput=()=>this.setMenuSize(Number(this.size.value));
+      this.patterns=window.AICCCustomClickPatterns ? new window.AICCCustomClickPatterns({controller:this}) : null;
+      if(this.patterns) this.patterns.onTargetSaved=(target)=>{this.savePattern.disabled=false;this.patternInfo.textContent='จำปุ่มแล้ว: '+(target.text || target.ariaLabel || target.tag);};
+      this.recordPattern.onclick=()=>this.patterns?.arm();
+      this.savePattern.onclick=()=>this.saveCurrentPattern();
+      this.runPattern.onclick=()=>this.runSelectedPattern();
+      this.refreshPatternList();
       this.installDrag(); this.restorePosition();
+    }
+    saveCurrentPattern(){
+      if(!this.patterns) return;
+      const p=this.patterns.add(this.patternName.value.trim() || 'Custom Click',{intervalMs:Number(this.interval.value),count:Number(this.count.value)});
+      this.savePattern.disabled=true; this.patternName.value=''; this.refreshPatternList(); this.patternList.value=p.id; this.patternInfo.textContent='บันทึกแล้ว: '+p.name;
+    }
+    refreshPatternList(){
+      if(!this.patternList || !this.patterns) return;
+      const list=this.patterns.getAll(); this.patternList.innerHTML='';
+      for(const p of list){const o=document.createElement('option');o.value=p.id;o.textContent=p.name+' · '+p.count+' ครั้ง / '+p.intervalMs+'ms';this.patternList.append(o);}
+    }
+    async runSelectedPattern(){
+      const p=this.patterns?.getAll().find(x=>x.id===this.patternList.value);
+      if(!p) return;
+      try{this.lock();this.setStatus('PATTERN_RUNNING');const result=await this.patterns.run(p);this.setStatus('PATTERN_DONE');return result;}
+      catch(error){this.setStatus('PATTERN_FAILED');this.state.patternError=String(error?.message||error);}
+      finally{this.unlock();}
     }
     setFont(v){this.cfg.statusFontSize=clamp(v,8,50);this.font.value=this.cfg.statusFontSize;this.shadow.host.style.setProperty('--font-size',this.cfg.statusFontSize+'px');this.shadow.querySelector('.fontOut').textContent=this.cfg.statusFontSize+'px';}
     setMenuSize(v){this.cfg.menuSize=clamp(v,40,88);this.size.value=this.cfg.menuSize;this.shadow.host.style.setProperty('--menu-size',this.cfg.menuSize+'px');this.shadow.querySelector('.sizeOut').textContent=this.cfg.menuSize+'px';}
@@ -49,7 +87,7 @@
       this.menu.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;this.moveMenu(e.clientX-drag.dx,e.clientY-drag.dy);});
       this.menu.addEventListener('pointerup',e=>{if(!drag||e.pointerId!==drag.id)return;drag=null;this.menu.style.cursor='grab';});
     }
-    setStatus(status,elapsed=0){this.state.status=status;this.shadow.querySelector('.label').textContent=status==='PROCESSING'?'กำลังประมวลผล...':status==='STALLED'?'ตรวจพบว่าหน้าเว็บหยุดทำงาน':status;this.shadow.querySelector('.elapsed').textContent=new Date(elapsed*1000).toISOString().slice(14,19);this.status.style.display=status==='READY'?'none':'grid';}
+    setStatus(status,elapsed=0){this.state.status=status;const labels={PROCESSING:'กำลังประมวลผล...',STALLED:'ตรวจพบว่าหน้าเว็บหยุดทำงาน',PATTERN_RECORDING:'กำลังจำปุ่ม...',PATTERN_TARGET_SAVED:'จำปุ่มเป้าหมายแล้ว',PATTERN_RUNNING:'กำลังกดตามแพตเทิร์น...',PATTERN_DONE:'แพตเทิร์นเสร็จแล้ว',PATTERN_FAILED:'แพตเทิร์นทำงานไม่สำเร็จ'};this.shadow.querySelector('.label').textContent=labels[status]||status;this.shadow.querySelector('.elapsed').textContent=new Date(elapsed*1000).toISOString().slice(14,19);this.status.style.display=status==='READY'?'none':'grid';}
     lock(){this.shield.style.display='block';this.state.running=true;}
     unlock(){this.shield.style.display='none';this.state.running=false;}
     start(step='WAIT_TARGET'){this.lock();this.state.checkpoint={step};this.setStatus('PROCESSING');}
