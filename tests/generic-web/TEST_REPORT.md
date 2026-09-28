@@ -59,3 +59,17 @@ Verified:
 - Production userscript packaging
 
 These remain intentionally outside the first generic-web validation phase.
+
+## Custom Click Pattern Layer
+
+Implemented in commit sequence on branch `test/generic-controller-ui`.
+
+- Added `tests/generic-web/aicc-generic-click-patterns.js`.
+- Added a separate menu section: **รูปแบบการกดอัตโนมัติ**.
+- Supports target recording, pattern name, click interval in milliseconds, click count, save, select, and run.
+- Target resolution is semantic-first; stored viewport position is metadata/fallback only.
+- Target is re-resolved and scrolled into view before each click.
+- Missing or disabled targets fail the pattern instead of blindly clicking.
+- Generic test page now contains a dedicated target button and click counter.
+
+**Test status for this new layer: IMPLEMENTED / browser execution pending.**
