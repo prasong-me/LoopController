@@ -1,13 +1,10 @@
-name: AICC Native Copy Gate
+name: AICC Native Copy Runtime Preflight
 
 on:
-  push:
-    branches:
-      - test/generic-controller-ui
   workflow_dispatch:
 
 jobs:
-  native-copy:
+  native-copy-preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -25,14 +22,21 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run Native Copy Gate
+      - name: Verify runtime gate is not silently enabled
+        run: |
+          if [ "${AICC_NATIVE_COPY_RUNTIME:-0}" = "1" ]; then
+            echo "AICC_NATIVE_COPY_RUNTIME must not be enabled on this hosted CI job."
+            exit 1
+          fi
+
+      - name: Run non-gate preflight
         run: npm run test:native-copy
 
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: aicc-native-copy-evidence
+          name: aicc-native-copy-preflight
           path: |
             test-results/
             playwright-report/
