@@ -1,13 +1,11 @@
 // ==UserScript==
-// @name         AI Conversation Controller — GPT ↔ Gemini
+// @name         AI Conversation Controller — Generic Web
 // @namespace    local.ai.conversation.controller
-// @version      0.2.0-test
+// @version      0.3.0-test
 // @updateURL     https://raw.githubusercontent.com/prasong-me/LoopController/test/generic-controller-ui/userscripts/ai-conversation-controller.user.js
 // @downloadURL   https://raw.githubusercontent.com/prasong-me/LoopController/test/generic-controller-ui/userscripts/ai-conversation-controller.user.js
-// @description  Sequential browser-side GPT ↔ Gemini controller with persistent checkpoints and reload recovery.
-// @match        https://chatgpt.com/*
-// @match        https://chat.openai.com/*
-// @match        https://gemini.google.com/*
+// @description  Generic browser-side controller with reusable interaction patterns, controller-owned storage, and optional GPT/Gemini workflow adapters.
+// @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addValueChangeListener
@@ -16,9 +14,59 @@
 // @run-at       document-idle
 // ==/UserScript==
 
+// ===== AICC CONTROLLER-OWNED STORAGE =====
+(() => {
+  'use strict';
+
+  class AICCStorage {
+    constructor(namespace = 'aicc.storage.v1') {
+      this.namespace = namespace;
+    }
+
+    key(name) {
+      return this.namespace + ':' + name;
+    }
+
+    get(name, fallback) {
+      try {
+        const value = GM_getValue(this.key(name), fallback);
+        return value == null ? fallback : value;
+      } catch {
+        return fallback;
+      }
+    }
+
+    set(name, value) {
+      GM_setValue(this.key(name), value);
+      return value;
+    }
+
+    remove(name) {
+      try {
+        GM_setValue(this.key(name), undefined);
+      } catch {}
+    }
+
+    watch(name, callback) {
+      return GM_addValueChangeListener(this.key(name), callback);
+    }
+  }
+
+  function currentContext() {
+    return {
+      protocol: location.protocol,
+      origin: location.origin,
+      hostname: location.hostname,
+      pathname: location.pathname || '/',
+      href: location.href
+    };
+  }
+
+  window.AICCStorage = AICCStorage;
+  window.AICCCurrentContext = currentContext;
+})();
 
 // ===== AICC SCREEN POSITION PATTERN =====
-
 (() => {
   'use strict';
 
@@ -26,10 +74,16 @@
   const screenClamp = (n, min, max) => Math.min(max, Math.max(min, n));
 
   class AICCScreenClickPatterns {
-    constructor({ controller = null, storageKey = 'aicc.screenClickPatterns.v1', activatePage = null } = {}) {
+    constructor({
+      controller = null,
+      storage = new window.AICCStorage(),
+      storageKey = 'patterns.screen.v2',
+      context = window.AICCCurrentContext()
+    } = {}) {
       this.controller = controller;
+      this.storage = storage;
       this.storageKey = storageKey;
-      this.activatePage = activatePage;
+      this.context = context;
       this.patterns = this.load();
       this.recording = false;
       this.currentPoints = [];
@@ -39,12 +93,24 @@
     }
 
     load() {
-      try { return JSON.parse(localStorage.getItem(this.storageKey) || '[]'); }
-      catch { return []; }
+      const all = this.storage.get(this.storageKey, []);
+      return Array.isArray(all) ? all : [];
     }
 
     persist() {
-      localStorage.setItem(this.storageKey, JSON.stringify(this.patterns));
+      this.storage.set(this.storageKey, this.patterns);
+    }
+
+    contextKey(scope = 'page') {
+      if (scope === 'global') return 'global';
+      if (scope === 'site') return this.context.origin;
+      return this.context.origin + this.context.pathname;
+    }
+
+    visibleForCurrentContext(pattern) {
+      const scope = pattern.contextScope || 'page';
+      if (scope === 'global') return true;
+      return pattern.contextKey === this.contextKey(scope);
     }
 
     ensureLayer() {
@@ -65,7 +131,6 @@
     addMarker(point) {
       const layer = this.ensureLayer();
       const el = document.createElement('div');
-      el.dataset.order = String(point.order);
       Object.assign(el.style, {
         position: 'fixed',
         left: (point.xRatio * 100) + 'vw',
@@ -111,6 +176,7 @@
 
       const x = screenClamp(event.clientX, 0, innerWidth);
       const y = screenClamp(event.clientY, 0, innerHeight);
+
       const point = {
         order: this.currentPoints.length + 1,
         page: this.currentPage,
@@ -145,9 +211,7 @@
     }
 
     save(name, {
-      pageMode = 'single',
-      pageAUrl = '',
-      pageBUrl = '',
+      contextScope = 'page',
       intervalMs = 500,
       count = 1
     } = {}) {
@@ -155,12 +219,16 @@
 
       this.setEnd();
 
+      const scope = ['page', 'site', 'global'].includes(contextScope)
+        ? contextScope
+        : 'page';
+
       const pattern = {
         id: crypto.randomUUID ? crypto.randomUUID() : 'screen-pattern-' + Date.now(),
         name: String(name || 'Screen Click Pattern'),
-        pageMode: pageMode === 'paired' ? 'paired' : 'single',
-        pageAUrl: String(pageAUrl || ''),
-        pageBUrl: String(pageBUrl || ''),
+        contextScope: scope,
+        contextKey: this.contextKey(scope),
+        context: { ...this.context },
         intervalMs: Math.max(0, Number(intervalMs) || 0),
         count: Math.max(1, Math.floor(Number(count) || 1)),
         maxPoints: 10,
@@ -179,17 +247,13 @@
       return { x, y, element: document.elementFromPoint(x, y) || null };
     }
 
-    async run(pattern, { activatePage = this.activatePage, pointerClick = null } = {}) {
+    async run(pattern, { pointerClick = null } = {}) {
       for (let cycle = 0; cycle < pattern.count; cycle++) {
         for (let i = 0; i < pattern.points.length; i++) {
           const point = pattern.points[i];
-
-          if (pattern.pageMode === 'paired' && activatePage) {
-            await activatePage(point.page, pattern);
-          }
-
           const target = this.resolvePoint(point);
-          if (!target.element) {
+
+          if (!target.element && !pointerClick) {
             throw new Error('Screen position ' + (i + 1) + ' has no target');
           }
 
@@ -224,6 +288,10 @@
       return [...this.patterns];
     }
 
+    getCurrentContext() {
+      return this.patterns.filter(p => this.visibleForCurrentContext(p));
+    }
+
     remove(id) {
       this.patterns = this.patterns.filter(p => p.id !== id);
       this.persist();
@@ -237,7 +305,7 @@
   window.AICCScreenClickPatterns = AICCScreenClickPatterns;
 })();
 
-
+// ===== OPTIONAL AI WORKFLOW / GENERIC CONTROLLER UI =====
 (() => {
   'use strict';
 
@@ -249,9 +317,9 @@
   const host = location.hostname;
   const engine =
     host === 'chatgpt.com' || host === 'chat.openai.com' ? 'GPT' :
-    host === 'gemini.google.com' ? 'GEMINI' : null;
+    host === 'gemini.google.com' ? 'GEMINI' : 'GENERIC';
 
-  if (!engine) return;
+  const isAIEngine = engine !== 'GENERIC';
 
   const DEFAULT = {
     running: false,
@@ -394,11 +462,7 @@
     const response = textOf(ready.root);
     if (!response) return false;
 
-    // Native provider Copy action is the completion gate.
     ready.button.click();
-
-    // Keep the native copy semantics, and also expose the exact response
-    // to the other userscript instance without requiring clipboard read access.
     GM_setClipboard(response, 'text');
 
     patch({
@@ -436,6 +500,8 @@
   }
 
   async function tick() {
+    if (!isAIEngine) return;
+
     const s = state();
     if (!s.running || s.activeEngine !== engine) return;
 
@@ -468,6 +534,7 @@
   }
 
   function start(initialMessage) {
+    if (!isAIEngine) return;
     if (!initialMessage?.trim()) {
       alert('ต้องมีข้อความเริ่มต้น');
       return;
@@ -493,6 +560,8 @@
     });
   }
 
+  let panel;
+
   function render() {
     if (!panel) return;
     const s = state();
@@ -501,8 +570,6 @@
     panel.querySelector('.aicc-turn').textContent = String(s.turn);
     panel.querySelector('.aicc-error').textContent = s.error || '';
   }
-
-  let panel;
 
   function initUI() {
     panel = document.createElement('div');
@@ -528,6 +595,7 @@
 
     panel.querySelector('.aicc-input').style.cssText =
       'width:100%;min-height:70px;box-sizing:border-box;margin:8px 0;';
+
     document.body.appendChild(panel);
 
     panel.querySelector('.aicc-start').onclick = () =>
@@ -539,15 +607,16 @@
 
   GM_addValueChangeListener(KEY, () => render());
 
-  GM_registerMenuCommand('AI Controller: START', () => {
-    const msg = prompt('ข้อความเริ่มต้น GPT → Gemini');
-    if (msg) start(msg);
-  });
-  GM_registerMenuCommand('AI Controller: STOP', stop);
+  if (isAIEngine) {
+    GM_registerMenuCommand('AI Controller: START', () => {
+      const msg = prompt('ข้อความเริ่มต้น GPT → Gemini');
+      if (msg) start(msg);
+    });
+    GM_registerMenuCommand('AI Controller: STOP', stop);
+  }
 
   initUI();
 
-  // Screen Position Pattern is intentionally separate from semantic/DOM patterns.
   const screenPatterns = new window.AICCScreenClickPatterns({
     controller: {
       setStatus: value => {
@@ -561,16 +630,12 @@
   function saveScreenPatternFromUI() {
     try {
       const name = panel.querySelector('.aicc-pattern-name').value.trim() || 'Screen Click Pattern';
-      const pageMode = panel.querySelector('.aicc-pattern-mode').value;
-      const pageAUrl = panel.querySelector('.aicc-pattern-a').value.trim();
-      const pageBUrl = panel.querySelector('.aicc-pattern-b').value.trim();
+      const contextScope = panel.querySelector('.aicc-pattern-scope').value;
       const intervalMs = Number(panel.querySelector('.aicc-pattern-interval').value || 500);
       const count = Number(panel.querySelector('.aicc-pattern-count').value || 1);
 
       const pattern = screenPatterns.save(name, {
-        pageMode,
-        pageAUrl,
-        pageBUrl,
+        contextScope,
         intervalMs,
         count
       });
@@ -589,23 +654,21 @@
     const box = document.createElement('div');
     box.className = 'aicc-pattern-box';
     box.innerHTML = `
-      <div style="font-weight:700;margin-top:10px;">Screen Position Pattern</div>
-      <select class="aicc-pattern-mode" style="width:100%;margin-top:6px;">
-        <option value="single">หน้าเดียว</option>
-        <option value="paired">จับคู่ 2 หน้า</option>
+      <div style="font-weight:700;margin-top:10px;">Interaction Pattern</div>
+      <select class="aicc-pattern-scope" style="width:100%;margin-top:6px;">
+        <option value="page">ผูกกับหน้านี้</option>
+        <option value="site">ผูกกับเว็บไซต์นี้</option>
+        <option value="global">ไม่ผูกกับเว็บ/หน้า</option>
       </select>
       <input class="aicc-pattern-name" placeholder="ชื่อ Pattern" style="width:100%;box-sizing:border-box;margin-top:6px;">
-      <input class="aicc-pattern-a" placeholder="URL หน้า A" style="width:100%;box-sizing:border-box;margin-top:6px;">
-      <input class="aicc-pattern-b" placeholder="URL หน้า B (ถ้าจับคู่)" style="width:100%;box-sizing:border-box;margin-top:6px;">
       <div style="display:flex;gap:6px;margin-top:6px;">
         <input class="aicc-pattern-interval" type="number" min="0" value="500" placeholder="ms" style="width:50%;box-sizing:border-box;">
         <input class="aicc-pattern-count" type="number" min="1" value="1" placeholder="รอบ" style="width:50%;box-sizing:border-box;">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
         <button class="aicc-pattern-new">เริ่ม Pattern ใหม่</button>
-        <button class="aicc-pattern-end">ปิดท้ายจุดล่าสุด</button>
-        <button class="aicc-pattern-rec-a">บันทึกตำแหน่ง A</button>
-        <button class="aicc-pattern-rec-b">บันทึกตำแหน่ง B</button>
+        <button class="aicc-pattern-end">กำหนดจุดล่าสุดเป็น END</button>
+        <button class="aicc-pattern-rec-a">บันทึกตำแหน่ง</button>
         <button class="aicc-pattern-save" style="grid-column:1/-1;">บันทึก Pattern</button>
       </div>
       <div class="aicc-pattern-status" style="margin-top:6px;font-size:12px;opacity:.8;">
@@ -619,38 +682,24 @@
       screenPatterns.startNew('A');
       box.querySelector('.aicc-pattern-status').textContent = 'เริ่มใหม่ — สูงสุด 10 ตำแหน่ง';
     };
+
     box.querySelector('.aicc-pattern-end').onclick = () => {
-      try {
-        screenPatterns.setEnd();
-        box.querySelector('.aicc-pattern-status').textContent = 'กำหนดตำแหน่งล่าสุดเป็น END แล้ว';
-      } catch (err) {
-        box.querySelector('.aicc-pattern-status').textContent = err.message;
-      }
+      screenPatterns.setEnd();
+      box.querySelector('.aicc-pattern-status').textContent = 'กำหนดตำแหน่งล่าสุดเป็น END แล้ว';
     };
+
     box.querySelector('.aicc-pattern-rec-a').onclick = () => {
       try {
         screenPatterns.arm('A');
-        box.querySelector('.aicc-pattern-status').textContent = 'กำลังบันทึกตำแหน่งบนหน้า A — คลิกจุดที่ต้องการ';
+        box.querySelector('.aicc-pattern-status').textContent = 'กำลังบันทึก — คลิก/แตะจุดที่ต้องการ';
       } catch (err) {
         box.querySelector('.aicc-pattern-status').textContent = err.message;
       }
     };
-    box.querySelector('.aicc-pattern-rec-b').onclick = () => {
-      try {
-        screenPatterns.arm('B');
-        box.querySelector('.aicc-pattern-status').textContent = 'กำลังบันทึกตำแหน่งบนหน้า B — คลิกจุดที่ต้องการ';
-      } catch (err) {
-        box.querySelector('.aicc-pattern-status').textContent = err.message;
-      }
-    };
+
     box.querySelector('.aicc-pattern-save').onclick = saveScreenPatternFromUI;
   }
 
   initScreenPatternUI();
-
-
-  // Each page instance is a state-driven worker only when it is the active engine.
-  // No server, API, token, or background service is used.
   setInterval(tick, POLL_MS);
 })();
-
