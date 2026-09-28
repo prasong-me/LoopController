@@ -1,0 +1,10 @@
+{
+  "name":"aicc-browser-runtime-tests",
+  "private":true,
+  "scripts":{
+    "test:native-copy":"playwright test tests/generic-web-loop/native-copy-gate.spec.mjs"
+  },
+  "devDependencies":{
+    "@playwright/test":"^1.63.0"
+  }
+}
