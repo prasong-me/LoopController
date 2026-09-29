@@ -111,3 +111,26 @@ The existing generic-web-loop fixture is now extended for real browser clipboard
 **Current evidence status: IMPLEMENTED / EXECUTION PENDING.**
 
 The earlier server-side Node result remains BLOCKED because that environment had no browser/OS clipboard. The new browser gate is the path for runtime evidence and must not be called PASS until its browser run produces the evidence artifact.
+
+
+## Pattern Verification Coverage Added
+
+Added `tests/generic-web/pattern-verification.spec.mjs` using the existing Generic Web fixture.
+
+Coverage includes:
+
+- Semantic/DOM pattern recording and target re-resolution.
+- Pattern persistence and execution count.
+- Screen-position recording with viewport-normalized coordinates.
+- Screen-position maximum of 10 points.
+- Paired-page metadata A/B preservation and END marker semantics.
+
+**Status: IMPLEMENTED / BROWSER EXECUTION PENDING**
+
+Important distinction:
+
+- DOM pattern execution currently uses the fixture/runtime's element-click path.
+- Screen-position execution without a supplied pointer adapter uses the existing synthetic event fallback.
+- Neither is evidence of OS-level native pointer injection.
+
+A production runtime must supply the appropriate native pointer-click adapter before those capabilities can be marked runtime-verified.
