@@ -10,28 +10,9 @@
 - Response readiness ก่อน Copy
 - Loop จำนวน 10 รอบ
 - การคงลำดับข้อมูลจากรอบก่อนหน้าเข้าสู่รอบถัดไป
+- Runtime verification ของ response lifecycle, transport-safe handoff และ checkpoint/recovery
 
-## Test Model
-
-`A → Copy → B → Paste → Copy → A → Paste`
-
-ทำซ้ำทั้งหมด 10 รอบ
-
-แต่ละรอบมี:
-
-- 3 ครั้งของ tab activation: A, B, A
-- 2 native Copy actions
-- 3 Paste operations
-- 2 response-generation cycles
-
-รวมทั้งการทดสอบ:
-
-- 30 tab activations
-- 20 Copy actions
-- 30 Paste operations
-- 10 completed loops
-
-## Results
+## Existing Results
 
 ### Deterministic Loop Test
 
@@ -48,52 +29,98 @@
 
 ### Browser Two-Tab Integration
 
-**PASS**
+**PASS — historical evidence**
 
-รันด้วย Chromium Headless ผ่าน Chrome DevTools Protocol โดยสร้าง 2 browser targets จริง แล้วสลับ A/B ระหว่างการทำงาน
+รายงานเดิมระบุการรัน Chromium Headless ผ่าน Chrome DevTools Protocol ด้วย 2 browser targets จริง
 
-ผลสุดท้าย:
+ผลที่บันทึกไว้:
 
 - A sequence = 10
 - B sequence = 10
 - รอบที่ 10 กลับมาที่ A สำเร็จ
-- Native Copy action ของ fixture ผ่านทุกครั้งหลัง response พร้อม
+- Native Copy action ของ fixture ผ่านหลัง response พร้อม
 - ไม่มี timeout ระหว่าง 10 รอบ
 - ไม่มีการข้ามรอบ
 
-## Important Limitation
+### Important Limitation
 
-รอบนี้ทดสอบ **Copy/Paste semantics และ native Copy action ใน Generic Web fixture** แต่ยังไม่ได้ยืนยัน OS/browser clipboard จริงแบบ `navigator.clipboard` บน runtime ที่มีข้อจำกัดด้าน permission/secure context
+ผลข้างต้นยังไม่ใช่หลักฐานว่า OS/browser clipboard จริงทำงานเหมือนกันทุก runtime เช่น Safari/iOS/Tampermonkey
 
-ดังนั้นผลนี้ยืนยันว่า:
+ดังนั้น:
 
-`Workflow Copy → Handoff → Paste → Continue`
+`Workflow Copy → Handoff → Paste → Continue` = VERIFIED สำหรับ Generic Harness ตามหลักฐานเดิม
 
-ทำงานครบ 10 รอบ
+`Real OS clipboard across all runtimes` = NOT VERIFIED
 
-แต่ยังไม่ถือว่าเป็นการรับรองว่า clipboard จริงของทุก runtime เช่น Safari/iOS/Tampermonkey จะทำงานเหมือนกัน
+## Runtime Verification Work Added
 
-## Status
+เพิ่ม `tests/generic-web-loop/runtime-verification.spec.mjs` เพื่อปิดช่องว่างที่สามารถตรวจได้ใน Browser Harness:
 
-| รายการ | สถานะ |
+1. **Response Lifecycle**
+   - Copy ต้อง disabled ระหว่าง PROCESSING
+   - Copy เปิดเมื่อ READY_TO_COPY
+   - response ต้องมี payload ก่อนเข้าสู่ capture
+
+2. **Cross-Page Handoff**
+   - payload ต้องผ่าน JSON serialization ได้
+   - `from_participant != to_participant`
+   - ไม่ส่ง live DOM/runtime object ผ่าน transport
+
+3. **Checkpoint Durability**
+   - checkpoint ถูกเก็บเป็น serializable data
+   - checkpoint ที่ semantic boundary รอดผ่าน page reload
+   - live DOM/runtime references ถูกปฏิเสธ
+
+4. **Recovery**
+   - recovery อ่าน checkpoint เดิม
+   - resume จาก semantic step เดิม
+   - ไม่สร้างความหมายว่า run ถูก restart ใหม่
+
+**สถานะ: IMPLEMENTED / EXECUTION PENDING**
+
+## Native Copy Gate
+
+ไฟล์ `native-copy-gate.spec.mjs` มีอยู่แล้วและถูกกำหนดให้รันเฉพาะเมื่อ `AICC_NATIVE_COPY_RUNTIME=1`
+
+Gate นี้ต้องตรวจ:
+
+- secure browser context
+- Clipboard API
+- native Copy control
+- Copy-click evidence
+- user-activation evidence
+- clipboard write completion
+- clipboard readback
+- exact payload match
+
+**สถานะ: IMPLEMENTED / REAL-BROWSER EXECUTION PENDING**
+
+ผล Node/headless ก่อนหน้านี้ที่ไม่มี OS Clipboard ยังคงเป็น **BLOCKED** และไม่ถูกนับเป็น PASS
+
+## Current Gate Matrix
+
+| Gate | Status |
 |---|---|
-| 2 Web pages | PASS |
-| Tab switching | PASS |
-| Response readiness | PASS |
-| Native Copy gate | PASS |
-| Copy → Paste | PASS |
-| Paste → Submit | PASS |
-| 10-loop execution | PASS |
-| Loop state propagation | PASS |
-| GPT/Gemini | NOT TESTED |
-| Real OS clipboard across all runtimes | NOT VERIFIED |
-| Refresh/Recovery during loop | NOT TESTED |
+| Generic 2-page loop | PASS (historical evidence) |
+| Response lifecycle browser coverage | IMPLEMENTED / EXECUTION PENDING |
+| Transport-safe handoff browser coverage | IMPLEMENTED / EXECUTION PENDING |
+| Checkpoint persistence/reload coverage | IMPLEMENTED / EXECUTION PENDING |
+| Recovery-from-checkpoint coverage | IMPLEMENTED / EXECUTION PENDING |
+| Native Copy + OS clipboard | IMPLEMENTED / EXECUTION PENDING |
+| GPT adapter | NOT TESTED |
+| Gemini adapter | NOT TESTED |
+| Real GPT/Gemini handoff | NOT TESTED |
+| Cross-runtime Safari/iOS clipboard | NOT VERIFIED |
+| Production userscript packaging | NOT VERIFIED |
 
-## Conclusion
+## Next Gate
 
-Generic two-page loop ผ่าน 10 รอบตาม Workflow ที่กำหนดแล้ว
+เมื่อมี Browser Runtime ที่เข้าถึง clipboard จริง ให้รัน:
 
-ขั้นถัดไปควรแยกเป็นสองงาน:
+`AICC_NATIVE_COPY_RUNTIME=1 npm run test:native-copy`
 
-1. เพิ่ม Checkpoint + Recovery/Refresh ระหว่าง Loop
-2. ทำ Runtime Clipboard Adapter สำหรับ runtime จริง แล้วค่อยทดสอบ GPT/Gemini
+และรัน Browser Runtime coverage:
+
+`npm run test:browser-runtime`
+
+ห้ามเลื่อนสถานะเป็น PASS จนกว่าจะมี execution evidence จาก runtime จริง
