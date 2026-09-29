@@ -1,12 +1,12 @@
-name: AICC Native Copy Runtime Preflight
+name: AICC Native Copy Runtime Gate
 
 on:
   workflow_dispatch:
 
 jobs:
-  native-copy-preflight:
+  native-copy-runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -16,27 +16,26 @@ jobs:
         with:
           node-version: lts/*
 
+      - name: Install X11 clipboard support
+        run: sudo apt-get update && sudo apt-get install -y xclip xsel
+
       - name: Install test dependencies
         run: npm install
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Verify runtime gate is not silently enabled
-        run: |
-          if [ "${AICC_NATIVE_COPY_RUNTIME:-0}" = "1" ]; then
-            echo "AICC_NATIVE_COPY_RUNTIME must not be enabled on this hosted CI job."
-            exit 1
-          fi
+      - name: Run browser runtime coverage
+        run: xvfb-run -a env AICC_HEADLESS=0 npm run test:browser-runtime
 
-      - name: Run non-gate preflight
-        run: npm run test:native-copy
+      - name: Run Native Copy Gate
+        run: xvfb-run -a env AICC_HEADLESS=0 AICC_NATIVE_COPY_RUNTIME=1 npm run test:native-copy
 
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: aicc-native-copy-preflight
+          name: aicc-native-copy-runtime
           path: |
             test-results/
             playwright-report/
