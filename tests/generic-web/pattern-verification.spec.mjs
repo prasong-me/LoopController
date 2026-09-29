@@ -12,28 +12,24 @@ test.describe('AICC Pattern Verification — Generic Web Harness', () => {
     await load(page);
 
     const result = await page.evaluate(() => {
-      const patterns = new AICCCustomClickPatterns({ controller: null });
-      patterns.arm();
-      return { armed: patterns.recording, patterns };
+      window.domPatternTest = new AICCCustomClickPatterns({ controller: null });
+      window.domPatternTest.arm();
+      return { armed: window.domPatternTest.recording };
     });
     expect(result.armed).toBe(true);
 
     await page.locator('#patternTarget').click();
 
-    const state = await page.evaluate(() => {
-      const patterns = new AICCCustomClickPatterns({ controller: null });
-      return {
-        recording: patterns.recording,
-        saved: patterns.lastTarget || null
-      };
-    });
+    const state = await page.evaluate(() => ({
+      recording: window.domPatternTest.recording,
+      saved: window.domPatternTest.lastTarget || null
+    }));
     expect(state.recording).toBe(false);
     expect(state.saved).toBeTruthy();
 
     const execution = await page.evaluate(async () => {
-      const patterns = new AICCCustomClickPatterns({ controller: null });
-      const pattern = patterns.add('DOM verification', { intervalMs: 0, count: 3 });
-      return { pattern, result: await patterns.run(pattern) };
+      const pattern = window.domPatternTest.add('DOM verification', { intervalMs: 0, count: 3 });
+      return { pattern, result: await window.domPatternTest.run(pattern) };
     });
 
     expect(execution.result.ok).toBe(true);
