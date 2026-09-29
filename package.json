@@ -4,7 +4,9 @@
   "scripts": {
     "test:native-copy": "playwright test tests/generic-web-loop/native-copy-gate.spec.mjs",
     "test:runtime": "playwright test tests/generic-web-loop/runtime-verification.spec.mjs",
-    "test:runtime-gate": "playwright test tests/generic-web-loop/native-copy-gate.spec.mjs tests/generic-web-loop/runtime-verification.spec.mjs"
+    "test:runtime-gate": "playwright test tests/generic-web-loop/native-copy-gate.spec.mjs tests/generic-web-loop/runtime-verification.spec.mjs",
+    "test:patterns": "playwright test tests/generic-web/pattern-verification.spec.mjs",
+    "test:browser-runtime": "playwright test tests/generic-web/pattern-verification.spec.mjs tests/generic-web-loop/runtime-verification.spec.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0"
