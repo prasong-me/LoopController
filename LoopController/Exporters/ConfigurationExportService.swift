@@ -15,15 +15,47 @@ struct ExportArtifact {
     let warnings: [String]
 }
 
+struct WireGuardExportOptions {
+    let address: String
+    let privateKey: String
+    let publicKey: String
+    let endpoint: String
+    let allowedIPs: [String]
+    let persistentKeepalive: Int?
+
+    init(
+        address: String,
+        privateKey: String,
+        publicKey: String,
+        endpoint: String,
+        allowedIPs: [String],
+        persistentKeepalive: Int? = nil
+    ) {
+        self.address = address
+        self.privateKey = privateKey
+        self.publicKey = publicKey
+        self.endpoint = endpoint
+        self.allowedIPs = allowedIPs
+        self.persistentKeepalive = persistentKeepalive
+    }
+}
+
 enum ExportError: Error, LocalizedError {
     case unsupportedTarget
     case invalidArtifact
     case encodingFailed
+    case missingWireGuardFields
+
     var errorDescription: String? {
         switch self {
-        case .unsupportedTarget: return "The selected configuration target is not supported."
-        case .invalidArtifact: return "The exporter returned an invalid artifact."
-        case .encodingFailed: return "The configuration could not be encoded as UTF-8."
+        case .unsupportedTarget:
+            return "The selected configuration target is not supported."
+        case .invalidArtifact:
+            return "The exporter returned an invalid artifact."
+        case .encodingFailed:
+            return "The configuration could not be encoded as UTF-8."
+        case .missingWireGuardFields:
+            return "WireGuard export requires interface and peer fields to be supplied explicitly."
         }
     }
 }
@@ -35,42 +67,119 @@ protocol ConfigurationExporter {
 
 struct LoopControllerConfigurationExporter: ConfigurationExporter {
     let target: ConfigurationTarget = .loopController
+
     func export(_ profile: NetworkProfile) throws -> ExportArtifact {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(profile)
-        return ExportArtifact(target: target, filename: "(safeExportName(profile.name)).loopcontroller.json", mimeType: "application/json", data: data, warnings: [])
+        let data = try LoopControllerExporter().export(profile)
+        return ExportArtifact(
+            target: target,
+            filename: "\(safeExportName(profile.name)).loopcontroller.json",
+            mimeType: "application/json",
+            data: data,
+            warnings: []
+        )
     }
 }
 
 struct SurgeConfigurationExporter: ConfigurationExporter {
     let target: ConfigurationTarget = .surge
+
     func export(_ profile: NetworkProfile) throws -> ExportArtifact {
         let text = SurgeExporter().export(profile)
-        guard let data = text.data(using: .utf8) else { throw ExportError.encodingFailed }
-        let warnings = profile.blocking.enabled ? ["Blocking categories are represented as requests/comments; target rule-set resources are not generated automatically."] : []
-        return ExportArtifact(target: target, filename: "(safeExportName(profile.name)).conf", mimeType: "text/plain", data: data, warnings: warnings)
+        guard let data = text.data(using: .utf8) else {
+            throw ExportError.encodingFailed
+        }
+
+        let warnings = profile.blocking.enabled
+            ? ["Blocking categories are represented as explicit requests/comments; target rule-set resources are not generated automatically."]
+            : []
+
+        return ExportArtifact(
+            target: target,
+            filename: "\(safeExportName(profile.name)).conf",
+            mimeType: "text/plain",
+            data: data,
+            warnings: warnings
+        )
     }
 }
 
 struct RocketProxyConfigurationExporter: ConfigurationExporter {
     let target: ConfigurationTarget = .rocketProxy
+
     func export(_ profile: NetworkProfile) throws -> ExportArtifact {
         let text = RocketProxyExporter().export(profile)
-        guard let data = text.data(using: .utf8) else { throw ExportError.encodingFailed }
-        let warnings = profile.blocking.enabled ? ["Blocking categories require explicitly selected rule providers; none are embedded automatically."] : []
-        return ExportArtifact(target: target, filename: "(safeExportName(profile.name)).yaml", mimeType: "text/yaml", data: data, warnings: warnings)
+        guard let data = text.data(using: .utf8) else {
+            throw ExportError.encodingFailed
+        }
+
+        let warnings = profile.blocking.enabled
+            ? ["Blocking categories require explicitly selected rule providers; none are embedded automatically."]
+            : []
+
+        return ExportArtifact(
+            target: target,
+            filename: "\(safeExportName(profile.name)).yaml",
+            mimeType: "text/yaml",
+            data: data,
+            warnings: warnings
+        )
     }
 }
 
 struct WireGuardConfigurationExporter: ConfigurationExporter {
     let target: ConfigurationTarget = .wireGuard
+
     func export(_ profile: NetworkProfile) throws -> ExportArtifact {
-        var lines = ["# Generated by LoopController", "[Interface]"]
-        if !profile.dns.servers.isEmpty { lines.append("DNS = (profile.dns.servers.joined(separator: ", "))") }
-        lines += ["", "[Peer]", "# Peer keys, endpoint and allowed IPs are not invented."]
-        guard let data = lines.joined(separator: "\n").data(using: .utf8) else { throw ExportError.encodingFailed }
-        return ExportArtifact(target: target, filename: "(safeExportName(profile.name)).wireguard.conf", mimeType: "text/plain", data: data, warnings: ["Peer PublicKey, Endpoint and AllowedIPs require explicit user-supplied values."])
+        throw ExportError.missingWireGuardFields
+    }
+
+    func export(_ profile: NetworkProfile, options: WireGuardExportOptions) throws -> ExportArtifact {
+        let required = [
+            options.address,
+            options.privateKey,
+            options.publicKey,
+            options.endpoint
+        ]
+
+        guard required.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              !options.allowedIPs.isEmpty else {
+            throw ExportError.missingWireGuardFields
+        }
+
+        var lines = [
+            "# Generated by LoopController",
+            "[Interface]",
+            "Address = \(options.address)",
+            "PrivateKey = \(options.privateKey)"
+        ]
+
+        if profile.dns.enabled, !profile.dns.servers.isEmpty {
+            lines.append("DNS = \(profile.dns.servers.joined(separator: ", "))")
+        }
+
+        lines += [
+            "",
+            "[Peer]",
+            "PublicKey = \(options.publicKey)",
+            "Endpoint = \(options.endpoint)",
+            "AllowedIPs = \(options.allowedIPs.joined(separator: ", "))"
+        ]
+
+        if let keepalive = options.persistentKeepalive, (0...65535).contains(keepalive) {
+            lines.append("PersistentKeepalive = \(keepalive)")
+        }
+
+        guard let data = lines.joined(separator: "\n").appending("\n").data(using: .utf8) else {
+            throw ExportError.encodingFailed
+        }
+
+        return ExportArtifact(
+            target: target,
+            filename: "\(safeExportName(profile.name)).wireguard.conf",
+            mimeType: "text/plain",
+            data: data,
+            warnings: []
+        )
     }
 }
 
@@ -81,12 +190,37 @@ struct ConfigurationExportService {
         .rocketProxy: RocketProxyConfigurationExporter(),
         .wireGuard: WireGuardConfigurationExporter()
     ]
+
     func export(_ profile: NetworkProfile, target: ConfigurationTarget) throws -> ExportArtifact {
-        guard let exporter = exporters[target] else { throw ExportError.unsupportedTarget }
+        guard let exporter = exporters[target] else {
+            throw ExportError.unsupportedTarget
+        }
+
         let artifact = try exporter.export(profile)
-        guard !artifact.data.isEmpty, !artifact.filename.isEmpty else { throw ExportError.invalidArtifact }
+        guard !artifact.data.isEmpty, !artifact.filename.isEmpty else {
+            throw ExportError.invalidArtifact
+        }
+
         return artifact
     }
+
+    func export(
+        _ profile: NetworkProfile,
+        target: ConfigurationTarget,
+        wireGuardOptions: WireGuardExportOptions
+    ) throws -> ExportArtifact {
+        guard target == .wireGuard else {
+            return try export(profile, target: target)
+        }
+
+        let artifact = try WireGuardConfigurationExporter().export(profile, options: wireGuardOptions)
+        guard !artifact.data.isEmpty, !artifact.filename.isEmpty else {
+            throw ExportError.invalidArtifact
+        }
+
+        return artifact
+    }
+
     func availableTargets() -> [ConfigurationTarget] {
         ConfigurationTarget.allCases.filter { exporters[$0] != nil }
     }
@@ -94,5 +228,9 @@ struct ConfigurationExportService {
 
 private func safeExportName(_ value: String) -> String {
     let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
-    return value.unicodeScalars.map { allowed.contains($0) ? String($0) : "_" }.joined()
+    let sanitized = value.unicodeScalars
+        .map { allowed.contains($0) ? String($0) : "_" }
+        .joined()
+
+    return sanitized.isEmpty ? "configuration" : sanitized
 }
