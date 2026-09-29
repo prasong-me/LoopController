@@ -11,3 +11,7 @@
 - Recorded the relevant Generic Web, DOM Pattern, Screen Position Pattern, userscript integration, and generic-domain refactor revisions.
 - Distinguished implementation, mock/unit evidence, browser E2E evidence, and native/runtime evidence.
 - v4.1 source supplied for audit is recorded as an external revision and is **not** marked accepted or verified.
+
+- Added Browser Runtime verification coverage for response lifecycle, transport-safe handoff, semantic checkpoint persistence/recovery, and Generic Web pattern families.
+- Added `test:runtime`, `test:patterns`, and `test:browser-runtime` commands.
+- Converted the Native Copy workflow from a non-gate preflight into an explicit Xvfb-backed runtime gate; execution evidence is still pending.
