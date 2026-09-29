@@ -90,13 +90,50 @@ button{padding:9px 14px;margin:8px 4px 0 0}
     }
   });
 
+  const CHECKPOINT_KEY='aicc-runtime-checkpoint-v1';
+
+  function saveCheckpoint(cp){
+    if(!checkpointAllowsOnlyData(cp)) throw new Error('checkpoint contains live runtime data');
+    sessionStorage.setItem(CHECKPOINT_KEY,JSON.stringify(cp));
+    return cp;
+  }
+
+  function getCheckpoint(){
+    const raw=sessionStorage.getItem(CHECKPOINT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }
+
+  function checkpointAllowsOnlyData(cp){
+    if(!cp || typeof cp!=='object' || Array.isArray(cp)) return false;
+    const forbidden=new Set(['live_dom','element','window','document','event','function','runtime_ref']);
+    const visit=(value,key='')=>{
+      if(forbidden.has(key)) return false;
+      if(value===null) return true;
+      if(typeof value==='string'||typeof value==='number'||typeof value==='boolean') return true;
+      if(Array.isArray(value)) return value.every(v=>visit(v));
+      if(typeof value==='object') return Object.entries(value).every(([k,v])=>visit(v,k));
+      return false;
+    };
+    return visit(cp);
+  }
+
+  function recoverFromCheckpoint(){
+    const cp=getCheckpoint();
+    if(!cp || !cp.semantic_boundary) return {ok:false,resumed_from_checkpoint:false,restarted_run:false};
+    return {...cp,ok:true,resumed_from_checkpoint:true,restarted_run:false};
+  }
+
   window.testApi={
     name,
     paste(v){message.value=v;message.dispatchEvent(new Event('input',{bubbles:true}));status.textContent='PASTED'},
     submit(){send.click()},
     isReadyToCopy(){return !copy.disabled&&response.textContent.trim().length>0},
     snapshot(){return {name,response:response.textContent,status:status.textContent,copied:copy.dataset.copied||'false',seq}},
-    getCopyTrace(){return copyTrace.map(x=>({...x}))}
+    getCopyTrace(){return copyTrace.map(x=>({...x}))},
+    saveCheckpoint,
+    getCheckpoint,
+    checkpointAllowsOnlyData,
+    recoverFromCheckpoint
   };
 })();
 </script>
